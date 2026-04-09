@@ -50,24 +50,8 @@ export const SOSProvider = ({ children }) => {
       };
       setSOSData(data);
 
-      // Open WhatsApp links
-      const mapLink = `https://maps.google.com/?q=${location.lat},${location.lng}`;
-      const message = `🚨 SAFELLE EMERGENCY ALERT 🚨\n${user?.fullName || 'User'} needs immediate help!\n📍 Location: ${mapLink}\n⏰ Time: ${new Date().toLocaleString()}\nPlease check on her or call 112 immediately.`;
-      const encoded = encodeURIComponent(message);
-
-      currentContacts.forEach((contact, i) => {
-        const cleanPhone = contact.phone.replace(/[\s-]/g, '');
-        setTimeout(() => {
-          window.open(`https://wa.me/${cleanPhone}?text=${encoded}`, '_blank');
-        }, i * 1000);
-      });
-
-      // Tel link fallback
-      if (currentContacts.length > 0) {
-        setTimeout(() => {
-          window.open(`tel:${currentContacts[0].phone.replace(/[\s-]/g, '')}`, '_self');
-        }, currentContacts.length * 1000 + 500);
-      }
+      // Note: Browsers block window.open in async callbacks.
+      // We rely on the explicit buttons in SOSPage.jsx to trigger calls and messages reliably.
 
       return data;
     } catch (err) {

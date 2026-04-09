@@ -138,29 +138,37 @@ const SOSPage = () => {
           ))}
         </div>
 
-        {/* Contacts notified */}
+        {/* Contacts notified and actionable */}
         {contacts.length > 0 && (
           <div style={{
             background: 'rgba(255,255,255,0.05)', borderRadius: 16,
             padding: 20, marginBottom: 24, textAlign: 'left'
           }}>
             <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, opacity: 0.7, textTransform: 'uppercase', letterSpacing: 1 }}>
-              Contacts Notified
+              Contacts Alerts
             </h3>
-            {contacts.map((c, i) => (
+            {contacts.map((c, i) => {
+              const cleanPhone = c.phone.replace(/[\s-]/g, '');
+              const message = `🚨 SAFELLE EMERGENCY: I need help! Location: ${mapLink}`;
+              const encoded = encodeURIComponent(message);
+              return (
               <div key={i} style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '8px 0', borderBottom: i < contacts.length - 1 ? '1px solid rgba(255,255,255,0.1)' : 'none'
+                padding: '12px 0', borderBottom: i < contacts.length - 1 ? '1px solid rgba(255,255,255,0.1)' : 'none'
               }}>
-                <span style={{ fontWeight: 600 }}>{c.name}</span>
-                <a
-                  href={`tel:${c.phone}`}
-                  style={{ color: '#22C55E', fontWeight: 600, fontSize: 13 }}
-                >
-                  📞 Call
-                </a>
+                <div style={{ fontWeight: 600, marginBottom: 10 }}>{c.name} <span style={{ opacity: 0.5, fontSize: 12, fontWeight: 400 }}>({c.phone})</span></div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <a href={`tel:${cleanPhone}`} style={{ color: '#22C55E', fontWeight: 600, fontSize: 12, textDecoration: 'none', background: 'rgba(34,197,94,0.1)', padding: '8px 12px', borderRadius: 8 }}>
+                    📞 Call
+                  </a>
+                  <a href={`sms:${cleanPhone}?body=${encoded}`} style={{ color: '#60A5FA', fontWeight: 600, fontSize: 12, textDecoration: 'none', background: 'rgba(96,165,250,0.1)', padding: '8px 12px', borderRadius: 8 }}>
+                    💬 SMS
+                  </a>
+                  <a href={`https://wa.me/${cleanPhone}?text=${encoded}`} target="_blank" rel="noopener noreferrer" style={{ color: '#25D366', fontWeight: 600, fontSize: 12, textDecoration: 'none', background: 'rgba(37,211,102,0.1)', padding: '8px 12px', borderRadius: 8 }}>
+                    📱 WhatsApp
+                  </a>
+                </div>
               </div>
-            ))}
+            )})}
           </div>
         )}
 
