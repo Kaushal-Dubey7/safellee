@@ -64,45 +64,40 @@ router.post('/safe-routes', auth, async (req, res) => {
 
     scoredRoutes.sort((a, b) => b.score - a.score);
 
-    while (scoredRoutes.length < 3) {
-      const baseRoute = scoredRoutes[scoredRoutes.length - 1];
-      scoredRoutes.push({
-        ...baseRoute,
-        index: scoredRoutes.length,
-        score: Math.max(0, baseRoute.score - 15 - Math.random() * 10),
-        breakdown: {
-          ...baseRoute.breakdown,
-          crime: Math.max(0, baseRoute.breakdown.crime - 10),
-          lighting: Math.max(0, baseRoute.breakdown.lighting - 15)
-        }
-      });
-    }
-
     const result = {
-      safe: {
-        ...scoredRoutes[0],
-        label: 'safe',
-        color: '#22C55E',
-        recommended: true
-      },
-      medium: {
-        ...scoredRoutes[1],
-        label: 'medium',
-        color: '#FF6B00',
-        recommended: false
-      },
-      risky: {
-        ...scoredRoutes[2],
-        label: 'risky',
-        color: '#EF4444',
-        recommended: false
-      },
       weather: {
         main: weatherData.weather?.[0]?.main || 'Clear',
         description: weatherData.weather?.[0]?.description || 'clear sky',
         temp: weatherData.main?.temp || 25
       }
     };
+
+    if (scoredRoutes.length > 0) {
+      result.safe = {
+        ...scoredRoutes[0],
+        label: 'safe',
+        color: '#22C55E',
+        recommended: true
+      };
+    }
+    
+    if (scoredRoutes.length > 1) {
+      result.medium = {
+        ...scoredRoutes[1],
+        label: 'medium',
+        color: '#FF6B00',
+        recommended: false
+      };
+    }
+    
+    if (scoredRoutes.length > 2) {
+      result.risky = {
+        ...scoredRoutes[2],
+        label: 'risky',
+        color: '#EF4444',
+        recommended: false
+      };
+    }
 
     SCORE_CACHE.set(cacheKey, { data: result, timestamp: Date.now() });
     res.json(result);

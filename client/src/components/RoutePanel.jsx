@@ -5,14 +5,20 @@ const RoutePanel = ({ routes, selectedRoute, onSelectRoute, onStartJourney, load
   if (!routes) return null;
 
   const routeEntries = [
-    { key: 'safe', data: routes.safe, label: 'Route A', color: '#22C55E' },
-    { key: 'medium', data: routes.medium, label: 'Route B', color: '#FF6B00' },
-    { key: 'risky', data: routes.risky, label: 'Route C', color: '#EF4444' }
+    { key: 'safe', data: routes.safe, label: 'Safest Route', color: '#22C55E' },
+    { key: 'medium', data: routes.medium, label: 'Alternative Route', color: '#FF6B00' },
+    { key: 'risky', data: routes.risky, label: 'Secondary Alternative', color: '#EF4444' }
   ];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Available Routes</h3>
+      
+      {routeEntries.filter(e => e.data).length === 1 && (
+        <div style={{ padding: '10px', background: 'rgba(255,255,255,0.05)', borderRadius: 8, fontSize: 13, color: '#9CA3AF', marginBottom: 4 }}>
+          There is only one valid route available to this destination.
+        </div>
+      )}
 
       {routeEntries.map(({ key, data, label, color }) => {
         if (!data) return null;
