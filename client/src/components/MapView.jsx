@@ -47,13 +47,51 @@ const destIcon = L.divIcon({
   iconAnchor: [10, 10]
 });
 
-const MapRecenter = ({ center, zoom }) => {
+const MapViewController = ({ routes, livePosition, showSource, showDest, followUser }) => {
   const map = useMap();
+
+  // FIX 1: Fit Bounds for Routes
   useEffect(() => {
-    if (center) {
-      map.setView(center, zoom || map.getZoom(), { animate: true });
+    if (followUser) return;
+    if (routes && (routes.safe || routes.medium || routes.risky)) {
+      const allCoords = [];
+      if (routes.safe && routes.safe.coordinates) allCoords.push(...routes.safe.coordinates);
+      if (routes.medium && routes.medium.coordinates) allCoords.push(...routes.medium.coordinates);
+      if (routes.risky && routes.risky.coordinates) allCoords.push(...routes.risky.coordinates);
+
+      if (allCoords.length > 0) {
+        map.fitBounds(L.latLngBounds(allCoords), {
+          padding: [60, 60],
+          maxZoom: 15,
+          animate: true,
+          duration: 1.0
+        });
+      }
     }
-  }, [center, zoom, map]);
+  }, [routes, map, followUser]);
+
+  // FIX 3: Fit Bounds for Source/Dest Markers BEFORE routes are loaded
+  useEffect(() => {
+    if (followUser) return;
+    if (!routes && showSource && showDest) {
+      map.fitBounds(L.latLngBounds(
+        [showSource.lat, showSource.lng], 
+        [showDest.lat, showDest.lng]
+      ), {
+        padding: [80, 80],
+        maxZoom: 14,
+        animate: true
+      });
+    }
+  }, [routes, showSource, showDest, map, followUser]);
+
+  // Active Journey Tracking Recenter
+  useEffect(() => {
+    if (followUser && livePosition) {
+      map.setView([livePosition.lat, livePosition.lng], 16, { animate: true, duration: 1.0 });
+    }
+  }, [livePosition, followUser, map]);
+
   return null;
 };
 
@@ -90,14 +128,18 @@ const MapView = ({
         touchZoom={true}
         dragging={true}
       >
+        <MapViewController 
+          routes={routes} 
+          livePosition={livePosition} 
+          showSource={showSource} 
+          showDest={showDest} 
+          followUser={followUser} 
+        />
+
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-
-        {followUser && livePosition && (
-          <MapRecenter center={[livePosition.lat, livePosition.lng]} />
-        )}
 
         {/* Routes */}
         {routes && Object.entries(routes).map(([key, route]) => {
