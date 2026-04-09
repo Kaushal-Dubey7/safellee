@@ -32,14 +32,21 @@ const RoutePanel = ({ routes, selectedRoute, onSelectRoute, onStartJourney, load
             style={{ borderColor: isSelected ? color : undefined }}
           >
             <div className="route-score">
-              <div className={`score-circle ${key}`}>
-                {data.score}
+              <div 
+                className={`score-circle ${key}`}
+                style={{ 
+                  background: data.safetyScore >= 70 ? '#22C55E' : data.safetyScore >= 50 ? '#FF6B00' : '#EF4444',
+                  color: 'white',
+                  border: 'none'
+                }}
+              >
+                {data.safetyScore}
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontWeight: 700, fontSize: 16 }}>{label}</span>
-                  {key === 'safe' && (
-                    <span className="badge badge-success" style={{ fontSize: 10 }}>RECOMMENDED</span>
+                  <span style={{ fontWeight: 700, fontSize: 16 }}>{data.label || label}</span>
+                  {data.badge && (
+                    <span className="badge badge-success" style={{ fontSize: 10 }}>{data.badge}</span>
                   )}
                 </div>
                 <div style={{ fontSize: 13, color: '#585F6C', marginTop: 2 }}>
@@ -48,35 +55,37 @@ const RoutePanel = ({ routes, selectedRoute, onSelectRoute, onStartJourney, load
               </div>
               <div style={{
                 width: 24, height: 24, borderRadius: '50%',
-                border: `2px solid ${isSelected ? color : '#ddd'}`,
+                border: `2px solid ${isSelected ? data.color || color : '#ddd'}`,
                 display: 'flex', alignItems: 'center', justifyContent: 'center'
               }}>
                 {isSelected && (
-                  <div style={{ width: 14, height: 14, borderRadius: '50%', background: color }} />
+                  <div style={{ width: 14, height: 14, borderRadius: '50%', background: data.color || color }} />
                 )}
               </div>
             </div>
 
             {/* Score breakdown */}
             {data.breakdown && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 12 }}>
                 {[
-                  { label: 'Crime Safety', value: data.breakdown.crime, weight: '35%' },
-                  { label: 'Lighting', value: data.breakdown.lighting, weight: '25%' },
-                  { label: 'Crowd Level', value: data.breakdown.crowd, weight: '20%' },
-                  { label: 'Weather', value: data.breakdown.weather, weight: '10%' }
+                  { label: 'Crime Safety', value: data.breakdown.crime },
+                  { label: 'Route Efficiency', value: data.breakdown.efficiency },
+                  { label: 'Lighting', value: data.breakdown.lighting },
+                  { label: 'Crowd Level', value: data.breakdown.crowd }
                 ].map(item => (
                   <div key={item.label} style={{ fontSize: 12 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
                       <span style={{ color: '#585F6C' }}>{item.label}</span>
-                      <span style={{ fontWeight: 600 }}>{item.value}</span>
+                      <span style={{ fontWeight: 600 }}>{item.value || 0}</span>
                     </div>
-                    <div className="progress-bar">
+                    <div className="progress-bar" style={{ height: 4, background: '#e5e7eb', borderRadius: 4, overflow: 'hidden' }}>
                       <div
                         className="progress-bar-fill"
                         style={{
-                          width: `${item.value}%`,
-                          background: getScoreColor(item.value)
+                          height: '100%',
+                          width: `${item.value || 0}%`,
+                          background: (item.value || 0) >= 70 ? '#22C55E' : (item.value || 0) >= 40 ? '#FF6B00' : '#EF4444',
+                          borderRadius: 4
                         }}
                       />
                     </div>

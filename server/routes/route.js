@@ -30,113 +30,87 @@ router.post('/safe-routes', auth, async (req, res) => {
       throw new Error(`OSRM API error: ${osrmResponse.status}`);
     }
 
-    const osrmData = await osrmResponse.json();
-    let allRoutes = osrmData.routes || [];
+    const data = await osrmResponse.json();
 
-    // HACKATHON ENHANCEMENT: If OSRM returns fewer than 3 routes, force generate physically real alternatives 
-    // by asking the engine to route through lateral waypoints (perpendicular to the main path).
-    if (allRoutes.length > 0 && allRoutes.length < 3) {
-      const slat = Number(sourceLat); const slng = Number(sourceLng);
-      const dlat = Number(destLat);   const dlng = Number(destLng);
-      
-      const mlat = (slat + dlat) / 2;
-      const mlng = (slng + dlng) / 2;
-      
-      const dLatDiff = dlat - slat;
-      const dLngDiff = dlng - slng;
-      
-      const offsets = [
-        { lat: mlat - dLngDiff * 0.3, lng: mlng + dLatDiff * 0.3 }, // Left offset
-        { lat: mlat + dLngDiff * 0.3, lng: mlng - dLatDiff * 0.3 }  // Right offset
-      ];
-      
-      for (const offset of offsets) {
-        if (allRoutes.length >= 3) break;
-        const altUrl = `https://router.project-osrm.org/route/v1/driving/${sourceLng},${sourceLat};${offset.lng},${offset.lat};${destLng},${destLat}?overview=full&geometries=geojson&steps=true`;
-        try {
-          const altRes = await fetch(altUrl);
-          if (altRes.ok) {
-            const altData = await altRes.json();
-            if (altData.routes && altData.routes.length > 0) {
-              // Ensure we don't duplicate identical polyline geometry
-              const isDuplicate = allRoutes.some(r => r.geometry === altData.routes[0].geometry);
-              if (!isDuplicate) {
-                allRoutes.push(altData.routes[0]);
-              }
-            }
-          }
-        } catch (e) {
-          console.error('Failed to fetch offset route', e);
-        }
-      }
-    }
-
-    if (allRoutes.length === 0) {
+    if (!data.routes || data.routes.length === 0) {
       return res.status(404).json({ error: 'No routes found between the given locations.' });
     }
 
+    const shortestDistance = Math.min(...data.routes.map(r => r.distance));
+    const MAX_DISTANCE_RATIO = 1.6;
+    
+    const validRoutes = data.routes.filter(route => {
+      const ratio = route.distance / shortestDistance;
+      return ratio <= MAX_DISTANCE_RATIO;
+    });
+
+    const routesToScore = validRoutes.length >= 2 ? validRoutes : data.routes.slice(0, 2);
+
+    const formattedRoutes = routesToScore.slice(0, 3).map(route => ({
+      geometry: route.geometry,
+      coordinates: route.geometry.coordinates.map(c => [c[1], c[0]]),
+      distance: route.distance,
+      duration: route.duration,
+      distanceKm: (route.distance / 1000).toFixed(1),
+      durationMin: Math.round(route.duration / 60),
+      legs: route.legs,
+      steps: route.legs[0]?.steps?.map(s => ({
+        instruction: s.maneuver?.instruction || '',
+        distance: s.distance,
+        duration: s.duration
+      })) || []
+    }));
+
     const weatherData = await fetchWeather(sourceLat, sourceLng);
 
-    const sourceCoords = { lat: sourceLat, lng: sourceLng };
-    const destCoords = { lat: destLat, lng: destLng };
+    const rankedRoutes = await Promise.all(
+      formattedRoutes.map(async (route) => {
+        const score = await calculateRouteScore(route, formattedRoutes, weatherData, { lat: sourceLat, lng: sourceLng }, { lat: destLat, lng: destLng });
+        return { ...route, safetyScore: score.total, breakdown: score.breakdown };
+      })
+    );
 
-    const scoredRoutes = [];
-    for (let i = 0; i < Math.min(allRoutes.length, 3); i++) {
-      const route = allRoutes[i];
-      const coords = route.geometry.coordinates.map(c => [c[1], c[0]]);
-      const score = await calculateRouteScore(coords, weatherData, sourceCoords, destCoords);
+    // SORT BY SAFETY SCORE DESCENDING (highest score = safest)
+    rankedRoutes.sort((a, b) => b.safetyScore - a.safetyScore);
 
-      scoredRoutes.push({
-        index: i,
-        coordinates: coords,
-        distance: route.distance,
-        duration: route.duration,
-        score: score.total,
-        breakdown: score.breakdown,
-        steps: route.legs[0]?.steps?.map(s => ({
-          instruction: s.maneuver?.instruction || '',
-          distance: s.distance,
-          duration: s.duration
-        })) || []
-      });
-    }
-
-    scoredRoutes.sort((a, b) => b.score - a.score);
+    console.log('=== SAFELLE ROUTE SCORING DEBUG ===');
+    rankedRoutes.forEach((route, i) => {
+      console.log(`Route ${i+1}: ${route.distanceKm}km | Score: ${route.safetyScore} | Efficiency: ${route.breakdown.efficiency}`);
+    });
+    console.log('Winner (safest):', rankedRoutes[0].distanceKm + 'km', 'score:', rankedRoutes[0].safetyScore);
+    console.log('===================================');
 
     const result = {
       weather: {
         main: weatherData.weather?.[0]?.main || 'Clear',
         description: weatherData.weather?.[0]?.description || 'clear sky',
         temp: weatherData.main?.temp || 25
-      }
-    };
-
-    if (scoredRoutes.length > 0) {
-      result.safe = {
-        ...scoredRoutes[0],
-        label: 'safe',
+      },
+      safe: {
+        ...rankedRoutes[0],
+        label: 'Safest Route',
         color: '#22C55E',
-        recommended: true
-      };
-    }
-    
-    if (scoredRoutes.length > 1) {
-      result.medium = {
-        ...scoredRoutes[1],
-        label: 'medium',
+        colorName: 'green',
+        badge: 'RECOMMENDED',
+        leafletOptions: { color: '#22C55E', weight: 7, opacity: 0.9 }
+      },
+      medium: rankedRoutes[1] ? {
+        ...rankedRoutes[1],
+        label: 'Alternative Route',
         color: '#FF6B00',
-        recommended: false
-      };
-    }
-    
-    if (scoredRoutes.length > 2) {
-      result.risky = {
-        ...scoredRoutes[2],
-        label: 'risky',
+        colorName: 'orange',
+        badge: null,
+        leafletOptions: { color: '#FF6B00', weight: 5, opacity: 0.75 }
+      } : null,
+      risky: rankedRoutes[2] ? {
+        ...rankedRoutes[2],
+        label: 'Secondary Alternative',
         color: '#EF4444',
-        recommended: false
-      };
-    }
+        colorName: 'red',
+        badge: null,
+        leafletOptions: { color: '#EF4444', weight: 4, opacity: 0.6, dashArray: '8 6' }
+      } : null
+    };
 
     SCORE_CACHE.set(cacheKey, { data: result, timestamp: Date.now() });
     res.json(result);
