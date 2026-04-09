@@ -11,6 +11,6 @@ const userSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
-userSchema.index({ email: 1 });
+
 
 module.exports = mongoose.model('User', userSchema);
