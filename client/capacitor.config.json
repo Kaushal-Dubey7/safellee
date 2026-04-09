@@ -1,0 +1,10 @@
+{
+  "appId": "com.safelle.app",
+  "appName": "Safelle",
+  "webDir": "dist",
+  "plugins": {
+    "PhoneCall": {
+      "permissions": ["android.permission.CALL_PHONE"]
+    }
+  }
+}
