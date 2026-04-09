@@ -8,6 +8,14 @@ const useDeadManSwitch = (options = {}) => {
   const sosTimerRef = useRef(null);
   const countdownRef = useRef(null);
 
+  const onCheckinRef = useRef(onCheckin);
+  const onSOSRef = useRef(onSOS);
+
+  useEffect(() => {
+    onCheckinRef.current = onCheckin;
+    onSOSRef.current = onSOS;
+  }, [onCheckin, onSOS]);
+
   const resetTimers = useCallback(() => {
     setShowCheckin(false);
     setCountdown(0);
@@ -22,7 +30,7 @@ const useDeadManSwitch = (options = {}) => {
       setShowCheckin(true);
       setCountdown((sosMinutes - checkinMinutes) * 60);
 
-      if (onCheckin) onCheckin();
+      if (onCheckinRef.current) onCheckinRef.current();
 
       countdownRef.current = setInterval(() => {
         setCountdown(prev => {
@@ -36,10 +44,10 @@ const useDeadManSwitch = (options = {}) => {
 
       sosTimerRef.current = setTimeout(() => {
         setShowCheckin(false);
-        if (onSOS) onSOS();
+        if (onSOSRef.current) onSOSRef.current();
       }, (sosMinutes - checkinMinutes) * 60 * 1000);
     }, checkinMinutes * 60 * 1000);
-  }, [enabled, checkinMinutes, sosMinutes, onCheckin, onSOS]);
+  }, [enabled, checkinMinutes, sosMinutes]);
 
   const confirmSafe = useCallback(() => {
     resetTimers();
