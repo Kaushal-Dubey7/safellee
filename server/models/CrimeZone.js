@@ -1,20 +1,20 @@
 const mongoose = require('mongoose');
 
-const crimeZoneSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  city: { type: String, default: 'Delhi' },
-  crimeScore: { type: Number, min: 0, max: 100, required: true },
-  lightingScore: { type: Number, min: 0, max: 100, required: true },
-  crowdScore: { type: Number, min: 0, max: 100, required: true },
-  type: { type: String, enum: ['high', 'medium', 'low'], required: true },
+const CrimeZoneSchema = new mongoose.Schema({
+  name:          String,
+  city:          String,
+  crimeScore:    { type: Number, min: 0, max: 100 },
+  lightingScore: { type: Number, min: 0, max: 100 },
+  crowdScore:    { type: Number, min: 0, max: 100 },
+  areaType:      { type: String, enum: ['commercial','residential','industrial','mixed','public','government'], default: 'mixed' },
+  type:          { type: String, enum: ['high','medium','low'] },
+  incidentCount: Number,
+  lastUpdated:   Date,
   geometry: {
-    type: { type: String, enum: ['Polygon'], default: 'Polygon' },
+    type:        { type: String, enum: ['Polygon'], required: true },
     coordinates: { type: [[[Number]]], required: true }
-  },
-  incidentCount: { type: Number, default: 0 },
-  lastUpdated: { type: Date, default: Date.now }
+  }
 });
 
-crimeZoneSchema.index({ geometry: '2dsphere' });
-
-module.exports = mongoose.model('CrimeZone', crimeZoneSchema);
+CrimeZoneSchema.index({ geometry: '2dsphere' });
+module.exports = mongoose.model('CrimeZone', CrimeZoneSchema);
