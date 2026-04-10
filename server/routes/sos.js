@@ -1,66 +1,134 @@
 const express = require('express');
 const router = express.Router();
-const SOSLog = require('../models/SOSLog');
-const LovedOne = require('../models/LovedOne');
-const Journey = require('../models/Journey');
 const auth = require('../middleware/auth');
-const { fetchNearestPoliceStation } = require('../services/poiService');
+const User = require('../models/User');
+const LovedOne = require('../models/LovedOne');
+const SOSLog = require('../models/SOSLog');
+const Journey = require('../models/Journey');
+const { 
+  sendSOSToAllContacts, 
+  callAllContacts, 
+  alertPoliceStation 
+} = require('../services/twilioService');
 
-// POST /api/sos/trigger
+// Fetch nearest police station from Overpass
+const getNearestPoliceStation = async (lat, lng) => {
+  try {
+    const fetch = require('node-fetch');
+    const query = `[out:json][timeout:10];node[amenity=police](around:3000,${lat},${lng});out body;`;
+    const res = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      body: query
+    });
+    const data = await res.json();
+    if (!data.elements || data.elements.length === 0) return null;
+    
+    const station = data.elements[0];
+    return {
+      name: station.tags?.name || 'Nearest Police Station',
+      phone: station.tags?.phone || station.tags?.['contact:phone'] || null,
+      lat: station.lat,
+      lng: station.lon
+    };
+  } catch (err) {
+    console.error('Police station fetch failed:', err.message);
+    return null;
+  }
+};
+
+// POST /api/sos/trigger — THE MAIN SOS ENDPOINT
 router.post('/trigger', auth, async (req, res) => {
   try {
-    const { journeyId, lat, lng, triggerType } = req.body;
+    const { lat, lng, triggerType, journeyId } = req.body;
 
-    if (typeof lat !== 'number' || typeof lng !== 'number') {
-      return res.status(400).json({ error: 'Valid location coordinates are required.' });
+    if (!lat || !lng) {
+      return res.status(400).json({ message: 'Location required for SOS' });
     }
 
-    const contacts = await LovedOne.find({ userId: req.userId });
-    const policeStation = await fetchNearestPoliceStation(lat, lng);
+    // 1. Get user details
+    const user = await User.findById(req.userId).select('-password');
+    if (!user) return res.status(404).json({ message: 'User not found' });
 
+    // 2. Get all loved ones
+    const contacts = await LovedOne.find({ userId: req.userId });
+    if (!contacts || contacts.length === 0) {
+      return res.status(400).json({ 
+        message: 'No emergency contacts found. Please add loved ones in your profile.' 
+      });
+    }
+
+    // 3. Get nearest police station
+    const policeStation = await getNearestPoliceStation(lat, lng);
+
+    // 4. Send SMS to ALL contacts via Twilio (automatic, real delivery)
+    const smsResults = await sendSOSToAllContacts(
+      contacts, 
+      user.fullName, 
+      lat, 
+      lng
+    );
+
+    // 5. Make calls to ALL contacts via Twilio
+    const callResults = await callAllContacts(
+      contacts,
+      user.fullName,
+      lat,
+      lng
+    );
+
+    // 6. Alert nearest police station if phone available
+    let policeAlerted = false;
+    if (policeStation?.phone) {
+      const policeResult = await alertPoliceStation(
+        policeStation.phone,
+        user.fullName,
+        lat,
+        lng
+      );
+      policeAlerted = policeResult.success;
+    }
+
+    // 7. Update journey status to SOS
     if (journeyId) {
       await Journey.findByIdAndUpdate(journeyId, { status: 'sos' });
     }
 
-    let address = '';
-    try {
-      const fetch = require('node-fetch');
-      const geoUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18`;
-      const geoRes = await fetch(geoUrl, { headers: { 'User-Agent': 'Safelle/1.0' } });
-      const geoData = await geoRes.json();
-      address = geoData.display_name || '';
-    } catch (geoErr) {
-      console.error('Reverse geocoding error:', geoErr.message);
-    }
-
+    // 8. Log SOS event to database
     const sosLog = new SOSLog({
       userId: req.userId,
       triggerType: triggerType || 'manual',
       location: { lat, lng },
-      address,
       contactsNotified: contacts.map(c => c.phone),
-      nearestPoliceStation: policeStation ? {
-        name: policeStation.name,
-        phone: policeStation.phone || '',
-        lat: policeStation.lat,
-        lng: policeStation.lng
-      } : undefined
+      nearestPoliceStation: policeStation,
+      createdAt: new Date()
     });
-
     await sosLog.save();
 
-    res.json({
-      sosId: sosLog._id,
-      contacts: contacts.map(c => ({ name: c.name, phone: c.phone })),
-      policeStation,
-      location: { lat, lng },
-      address,
-      mapLink: `https://maps.google.com/?q=${lat},${lng}`,
-      message: `🚨 SAFELLE EMERGENCY ALERT 🚨\n${req.user.fullName} needs immediate help!\n📍 Location: https://maps.google.com/?q=${lat},${lng}\n⏰ Time: ${new Date().toLocaleString()}\nPlease check on her or call 112 immediately.`
+    // 9. Return full response to frontend
+    return res.status(200).json({
+      success: true,
+      message: 'SOS activated successfully',
+      data: {
+        contactsNotified: contacts.map(c => ({ 
+          name: c.name, 
+          phone: c.phone,
+          smsSent: smsResults.sent > 0
+        })),
+        smsResults,
+        callResults,
+        policeStation,
+        policeAlerted,
+        locationLink: `https://maps.google.com/?q=${lat},${lng}`,
+        timestamp: new Date().toISOString()
+      }
     });
-  } catch (error) {
-    console.error('SOS trigger error:', error);
-    res.status(500).json({ error: 'Failed to trigger SOS. Please call 112 directly.' });
+
+  } catch (err) {
+    console.error('SOS trigger error:', err);
+    return res.status(500).json({ 
+      message: 'SOS system error', 
+      error: err.message 
+    });
   }
 });
 

@@ -44,22 +44,30 @@ export const SOSProvider = ({ children }) => {
         triggerType: 'manual'
       });
 
-      const data = {
-        ...res.data,
-        contacts: currentContacts.map(c => ({ name: c.name, phone: c.phone }))
-      };
-      setSOSData(data);
+      const responseData = res.data.data;
+      setSOSData(responseData);
 
-      // Note: Browsers block window.open in async callbacks.
-      // We rely on the explicit buttons in SOSPage.jsx to trigger calls and messages reliably.
+      // Capacitor auto-call (APK only) — as additional layer
+      if (window.Capacitor?.isNativePlatform()) {
+        const { PhoneCall } = await import('@capacitor-community/phone-call');
+        for (const contact of responseData.contactsNotified) {
+          try {
+            await PhoneCall.call({ number: contact.phone });
+            // Wait 30 seconds between calls to give them time to pick up
+            await new Promise(r => setTimeout(r, 30000));
+          } catch (e) {
+            console.log('Capacitor call failed:', e);
+          }
+        }
+      }
 
-      return data;
+      return responseData;
     } catch (err) {
       console.error('SOS activation error:', err);
       setSOSData({
-        contacts: currentContacts.map(c => ({ name: c.name, phone: c.phone })),
+        contactsNotified: currentContacts.map(c => ({ name: c.name, phone: c.phone, smsSent: false })),
         location,
-        mapLink: `https://maps.google.com/?q=${location.lat},${location.lng}`
+        locationLink: `https://maps.google.com/?q=${location.lat},${location.lng}`
       });
     }
   }, [contacts, fetchContacts, user]);

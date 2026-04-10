@@ -49,9 +49,9 @@ const SOSPage = () => {
     if (cancelIntervalRef.current) clearInterval(cancelIntervalRef.current);
   };
 
-  const contacts = sosData?.contacts || [];
+  const contacts = sosData?.contactsNotified || [];
   const policeStation = sosData?.policeStation;
-  const mapLink = sosData?.mapLink || '';
+  const mapLink = sosData?.locationLink || '';
 
   return (
     <div style={{
@@ -149,22 +149,19 @@ const SOSPage = () => {
             </h3>
             {contacts.map((c, i) => {
               const cleanPhone = c.phone.replace(/[\s-]/g, '');
-              const message = `🚨 SAFELLE EMERGENCY: I need help! Location: ${mapLink}`;
-              const encoded = encodeURIComponent(message);
               return (
               <div key={i} style={{
                 padding: '12px 0', borderBottom: i < contacts.length - 1 ? '1px solid rgba(255,255,255,0.1)' : 'none'
               }}>
-                <div style={{ fontWeight: 600, marginBottom: 10 }}>{c.name} <span style={{ opacity: 0.5, fontSize: 12, fontWeight: 400 }}>({c.phone})</span></div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <a href={`tel:${cleanPhone}`} style={{ color: '#22C55E', fontWeight: 600, fontSize: 12, textDecoration: 'none', background: 'rgba(34,197,94,0.1)', padding: '8px 12px', borderRadius: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 15 }}>{c.name} <span style={{ opacity: 0.5, fontSize: 12, fontWeight: 400 }}>({c.phone})</span></div>
+                    <div style={{ fontSize: 13, marginTop: 6, fontWeight: 600, color: c.smsSent ? '#22C55E' : '#FCA5A5' }}>
+                      {c.smsSent ? '✓ SMS Delivered via Twilio' : '⚠ SMS Delivery Pending'}
+                    </div>
+                  </div>
+                  <a href={`tel:${cleanPhone}`} style={{ color: '#ffffff', fontWeight: 600, fontSize: 13, textDecoration: 'none', background: '#DC2626', padding: '10px 16px', borderRadius: 8, boxShadow: '0 2px 10px rgba(220,38,38,0.3)' }}>
                     📞 Call
-                  </a>
-                  <a href={`sms:${cleanPhone}?body=${encoded}`} style={{ color: '#60A5FA', fontWeight: 600, fontSize: 12, textDecoration: 'none', background: 'rgba(96,165,250,0.1)', padding: '8px 12px', borderRadius: 8 }}>
-                    💬 SMS
-                  </a>
-                  <a href={`https://wa.me/${cleanPhone}?text=${encoded}`} target="_blank" rel="noopener noreferrer" style={{ color: '#25D366', fontWeight: 600, fontSize: 12, textDecoration: 'none', background: 'rgba(37,211,102,0.1)', padding: '8px 12px', borderRadius: 8 }}>
-                    📱 WhatsApp
                   </a>
                 </div>
               </div>
