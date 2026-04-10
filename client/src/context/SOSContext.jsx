@@ -49,7 +49,7 @@ export const SOSProvider = ({ children }) => {
 
       // Capacitor auto-call (APK only) — as additional layer
       if (window.Capacitor?.isNativePlatform()) {
-        const { PhoneCall } = await import('@capacitor-community/phone-call');
+        const { PhoneCall } = await import(/* @vite-ignore */ '@capacitor-community/phone-call');
         for (const contact of responseData.contactsNotified) {
           try {
             await PhoneCall.call({ number: contact.phone });
