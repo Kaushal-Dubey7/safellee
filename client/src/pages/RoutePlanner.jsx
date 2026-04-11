@@ -29,16 +29,41 @@ const RoutePlanner = () => {
     }).catch(() => {});
   }, []);
 
-  const useCurrentLocation = async () => {
+  const useCurrentLocation = async (e) => {
+    if (e) e.preventDefault();
+    setError('');
+    let pos = null;
+    
     try {
-      const pos = await getCurrentPosition();
+      pos = await getCurrentPosition();
+    } catch (err) {
+      console.warn('Browser GPS failed, falling back to IP location...', err);
+      try {
+        const ipRes = await fetch('http://ip-api.com/json/');
+        const ipData = await ipRes.json();
+        if (ipData && ipData.status === 'success') {
+          pos = { lat: ipData.lat, lng: ipData.lon };
+        } else {
+          throw new Error('IP Location failed');
+        }
+      } catch (fallbackErr) {
+        setError('Could not get your location automatically. Please type it manually.');
+        return;
+      }
+    }
+
+    try {
       const name = await reverseGeocode(pos.lat, pos.lng);
-      setSource({ name: name.split(',').slice(0, 3).join(','), lat: pos.lat, lng: pos.lng });
-      setSourceQuery(name.split(',').slice(0, 3).join(','));
+      const shortName = name.split(',').slice(0, 3).join(', ');
+      setSource({ name: shortName, lat: pos.lat, lng: pos.lng });
+      setSourceQuery(shortName);
       setSourceSuggestions([]);
       setMapCenter([pos.lat, pos.lng]);
-    } catch {
-      setError('Could not get your location. Please enable GPS.');
+    } catch (err) {
+      const fallbackName = `${pos.lat.toFixed(4)}, ${pos.lng.toFixed(4)}`;
+      setSource({ name: fallbackName, lat: pos.lat, lng: pos.lng });
+      setSourceQuery(fallbackName);
+      setMapCenter([pos.lat, pos.lng]);
     }
   };
 
