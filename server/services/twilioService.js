@@ -70,27 +70,22 @@ const makeEmergencyCall = async (toPhone, userName, lat, lng) => {
     const formattedPhone = formatPhoneForTwilio(toPhone);
     const mapLink = `https://maps.google.com/?q=${lat},${lng}`;
     
-    // TwiML — what Twilio says when contact picks up
-    const twiml = `
-      <Response>
-        <Say voice="alice" language="en-IN">
-          Emergency Alert from Safelle. 
-          ${userName} may be in danger and needs your help immediately.
-          Her last known location has been sent to your phone via SMS.
-          Please check on her or call one one two immediately.
-          This message will repeat.
-        </Say>
-        <Pause length="1"/>
-        <Say voice="alice" language="en-IN">
-          Emergency Alert from Safelle. 
-          ${userName} may be in danger.
-          Please check your SMS for her location.
-        </Say>
-      </Response>
-    `;
+    // Safer TwiML execution using official builder instead of raw XML string
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const response = new VoiceResponse();
+    
+    response.say(
+      { voice: 'Polly.Aditi', language: 'en-IN' }, 
+      `Emergency Alert from Safelle. ${userName} may be in danger and needs your help immediately. Her last known location has been sent to your phone via SMS. Please check on her or call one one two immediately. This message will repeat.`
+    );
+    response.pause({ length: 1 });
+    response.say(
+      { voice: 'Polly.Aditi', language: 'en-IN' }, 
+      `Emergency Alert from Safelle. ${userName} may be in danger. Please check your SMS for her location.`
+    );
 
     const call = await client.calls.create({
-      twiml: twiml,
+      twiml: response.toString(),
       to: formattedPhone,
       from: TWILIO_NUMBER
     });
