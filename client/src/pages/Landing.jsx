@@ -300,7 +300,7 @@ const Landing = () => {
         padding: '32px 24px', background: '#0A0A0A', color: 'rgba(255,255,255,0.5)',
         textAlign: 'center', fontSize: 13
       }}>
-        <p>© 2024 Safelle — The Silent Guardian. Built for the safety of women everywhere.</p>
+        <p>© 2026 Safelle — The Silent Guardian. Built for the safety of women everywhere.</p>
       </footer>
 
       <style>{`
