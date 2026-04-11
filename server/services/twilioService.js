@@ -65,7 +65,7 @@ const sendSOSToAllContacts = async (contacts, userName, lat, lng) => {
 };
 
 // ─── AUTO CALL VIA TWILIO (browser fallback when APK not available) ───
-const makeEmergencyCall = async (toPhone, userName, lat, lng) => {
+const makeEmergencyCall = async (toPhone, userName, lat, lng, address = 'an unknown location') => {
   try {
     const formattedPhone = formatPhoneForTwilio(toPhone);
     const mapLink = `https://maps.google.com/?q=${lat},${lng}`;
@@ -76,12 +76,12 @@ const makeEmergencyCall = async (toPhone, userName, lat, lng) => {
     
     response.say(
       { voice: 'Polly.Aditi', language: 'en-IN' }, 
-      `Emergency Alert from Safelle. ${userName} may be in danger and needs your help immediately. Her last known location has been sent to your phone via SMS. Please check on her or call one one two immediately. This message will repeat.`
+      `Emergency Alert from Safelle. ${userName} may be in danger and needs your help immediately. Her last known location is near ${address}. Please check on her or call one one two immediately. This message will repeat.`
     );
     response.pause({ length: 1 });
     response.say(
       { voice: 'Polly.Aditi', language: 'en-IN' }, 
-      `Emergency Alert from Safelle. ${userName} may be in danger. Please check your SMS for her location.`
+      `Emergency Alert from Safelle. ${userName} may be in danger. Her last known location is near ${address}.`
     );
 
     const call = await client.calls.create({
@@ -100,11 +100,11 @@ const makeEmergencyCall = async (toPhone, userName, lat, lng) => {
 };
 
 // ─── MAKE CALLS TO ALL CONTACTS ───────────────────────────────────────
-const callAllContacts = async (contacts, userName, lat, lng) => {
+const callAllContacts = async (contacts, userName, lat, lng, address) => {
   const results = [];
   
   for (const contact of contacts) {
-    const result = await makeEmergencyCall(contact.phone, userName, lat, lng);
+    const result = await makeEmergencyCall(contact.phone, userName, lat, lng, address);
     results.push({ contact: contact.name, ...result });
     // Small delay between calls to avoid Twilio rate limiting
     await new Promise(r => setTimeout(r, 2000));

@@ -60,6 +60,21 @@ router.post('/trigger', auth, async (req, res) => {
     // 3. Get nearest police station
     const policeStation = await getNearestPoliceStation(lat, lng);
 
+    // 3.5 Reverse Geocode location to speak street name out loud
+    let readableAddress = 'an unknown location';
+    try {
+      const fetch = require('node-fetch');
+      const geoUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18`;
+      const geoRes = await fetch(geoUrl, { headers: { 'User-Agent': 'Safelle/1.0' } });
+      const geoData = await geoRes.json();
+      if (geoData && geoData.display_name) {
+         const parts = geoData.display_name.split(',');
+         readableAddress = parts.slice(0, 3).join(', ').trim();
+      }
+    } catch (geoErr) {
+      console.error('Reverse geocoding error:', geoErr.message);
+    }
+
     // 4. Send SMS to ALL contacts via Twilio (automatic, real delivery)
     const smsResults = await sendSOSToAllContacts(
       contacts, 
@@ -73,7 +88,8 @@ router.post('/trigger', auth, async (req, res) => {
       contacts,
       user.fullName,
       lat,
-      lng
+      lng,
+      readableAddress
     );
 
     // 6. Alert nearest police station if phone available
