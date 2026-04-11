@@ -30,44 +30,9 @@ const fetchRoutesFromOSRM = async (sourceLat, sourceLng, destLat, destLng) => {
     durationMin: Math.round(r.duration / 60)
   }));
 
-  if (rawRoutes.length === 1) {
-    console.log('OSRM returned 1 route — generating synthetic alternatives');
-    const base = rawRoutes[0];
-    const synth2 = {
-      ...base,
-      distance:   base.distance * 1.18,
-      duration:   base.duration * 1.15,
-      distanceKm: (base.distance * 1.18 / 1000).toFixed(1),
-      durationMin: Math.round(base.duration * 1.15 / 60),
-      isSynthetic: true
-    };
-    const synth3 = {
-      ...base,
-      distance:   base.distance * 1.35,
-      duration:   base.duration * 1.28,
-      distanceKm: (base.distance * 1.35 / 1000).toFixed(1),
-      durationMin: Math.round(base.duration * 1.28 / 60),
-      isSynthetic: true
-    };
-    return [base, synth2, synth3];
-  }
-
-  if (rawRoutes.length === 2) {
-    const base = rawRoutes[0];
-    const synth3 = {
-      ...base,
-      distance:   base.distance * 1.4,
-      duration:   base.duration * 1.3,
-      distanceKm: (base.distance * 1.4 / 1000).toFixed(1),
-      durationMin: Math.round(base.duration * 1.3 / 60),
-      isSynthetic: true
-    };
-    return [...rawRoutes, synth3];
-  }
-
   const shortestDist = Math.min(...rawRoutes.map(r => r.distance));
   const filtered = rawRoutes.filter(r => r.distance / shortestDist <= 1.8);
-  return filtered.length >= 3 ? filtered.slice(0,3) : rawRoutes.slice(0,3);
+  return filtered;
 };
 
 // POST /api/route/safe-routes
@@ -109,22 +74,6 @@ router.post('/safe-routes', auth, async (req, res) => {
     scoredRoutes.sort((a, b) => b.safetyScore - a.safetyScore);
     console.log('Scores after sorting:', scoredRoutes.map(r => `${r.distanceKm}km → ${r.safetyScore}`));
 
-    // 5. Artificial separation if too close
-    if (scoredRoutes.length >= 2) {
-      const diff01 = scoredRoutes[0].safetyScore - scoredRoutes[1].safetyScore;
-      if (diff01 < 3) {
-        scoredRoutes[1].safetyScore = Math.max(0, scoredRoutes[0].safetyScore - 5);
-        scoredRoutes[1].breakdown.efficiency = Math.max(0, scoredRoutes[1].breakdown.efficiency - 8);
-      }
-    }
-    if (scoredRoutes.length >= 3) {
-      const diff12 = scoredRoutes[1].safetyScore - scoredRoutes[2].safetyScore;
-      if (diff12 < 3) {
-        scoredRoutes[2].safetyScore = Math.max(0, scoredRoutes[1].safetyScore - 6);
-        scoredRoutes[2].breakdown.efficiency = Math.max(0, scoredRoutes[2].breakdown.efficiency - 10);
-      }
-    }
-
     const result = {
       safe: {
         ...scoredRoutes[0],
@@ -134,22 +83,8 @@ router.post('/safe-routes', auth, async (req, res) => {
         badge:      'RECOMMENDED',
         leafletOptions: { color: '#22C55E', weight: 7, opacity: 0.9 }
       },
-      medium: {
-        ...(scoredRoutes[1] || scoredRoutes[0]),
-        label:      'Alternative Route',
-        colorName:  'orange',
-        color:      '#FF6B00',
-        badge:      null,
-        leafletOptions: { color: '#FF6B00', weight: 5, opacity: 0.75 }
-      },
-      risky: {
-        ...(scoredRoutes[2] || scoredRoutes[0]),
-        label:      'Risky Route',
-        colorName:  'red',
-        color:      '#EF4444',
-        badge:      null,
-        leafletOptions: { color: '#EF4444', weight: 4, opacity: 0.6, dashArray: '8 6' }
-      },
+      medium: null,
+      risky: null,
       weather: weatherData ? {
         condition: weatherData.weather?.[0]?.main,
         temp:      weatherData.main?.temp ? (weatherData.main.temp - 273.15).toFixed(1) : null,
