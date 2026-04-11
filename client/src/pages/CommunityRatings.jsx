@@ -13,8 +13,13 @@ const CommunityRatings = () => {
 
   const loadRatings = async () => {
     try {
-      const res = await api.get('/api/ratings/my');
-      setMyRatings(res.data.ratings || []);
+      // Load both global feed and personal stats
+      const [globalRes, myRes] = await Promise.all([
+        api.get('/api/ratings'),
+        api.get('/api/ratings/my')
+      ]);
+      // set global ratings for the feed
+      setMyRatings(globalRes.data || []);
     } catch (err) {
       console.error('Load ratings error:', err);
     } finally {
@@ -80,14 +85,25 @@ const CommunityRatings = () => {
                         </span>
                       ))}
                     </div>
-                    <div style={{ fontSize: 12, color: '#585F6C' }}>
-                      {new Date(rating.createdAt).toLocaleDateString()}
+                    {/* Bug 1 Fix: Display Address Fields */}
+                    <div style={{ fontWeight: 600, fontSize: 16, marginTop: 8, color: '#191C1E' }}>
+                      📍 {rating.routeLabel || 'Unknown Route'}
+                    </div>
+                    {rating.city && (
+                      <div style={{ fontSize: 13, color: '#FF6B00', fontWeight: 500, marginBottom: 8 }}>
+                        {rating.city}
+                      </div>
+                    )}
+                    <div style={{ fontSize: 13, color: '#585F6C', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>👤 {rating.userName || 'Anonymous'}</span>
+                      <span>·</span>
+                      <span>{new Date(rating.createdAt).toLocaleDateString()}</span>
                     </div>
                   </div>
                 </div>
 
                 {rating.comment && (
-                  <p style={{ fontSize: 14, color: '#191C1E', marginBottom: 10, lineHeight: 1.5 }}>
+                  <p style={{ fontSize: 14, color: '#191C1E', marginBottom: 10, lineHeight: 1.5, padding: '10px 14px', background: '#F8F9FA', borderRadius: 8 }}>
                     "{rating.comment}"
                   </p>
                 )}

@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const fetch = require('node-fetch');
 const CrimeZone = require('../models/CrimeZone');
 const RouteRating = require('../models/RouteRating');
+const RouteScoreCache = require('../models/RouteScoreCache');
 
 // ─── LIGHTING: Query real street lamps from OpenStreetMap ────────────
 const getLightingScore = async (routeCoords) => {
@@ -140,25 +141,46 @@ const getCrimeScore = async (routeCoords) => {
 const getCommunityScore = async (routeCoords) => {
   try {
     const start = routeCoords[0];
-    const end = routeCoords[routeCoords.length - 1];
+    const end   = routeCoords[routeCoords.length - 1];
+    const mid   = routeCoords[Math.floor(routeCoords.length / 2)];
 
+    // Check cache first (fast path) for all 3 points
+    const cacheResults = await Promise.all([start, mid, end].map(async (point) => {
+      const areaLat = Math.round(point[0] * 100) / 100;
+      const areaLng = Math.round(point[1] * 100) / 100;
+      const areaKey = `${areaLat}_${areaLng}`;
+      return RouteScoreCache.findOne({ areaKey });
+    }));
+
+    const validCache = cacheResults.filter(c => c && c.totalRatings > 0);
+
+    if (validCache.length > 0) {
+      // Use cached community scores (already aggregated)
+      const avgCommunityScore = validCache.reduce((s, c) => s + c.communityScore, 0) / validCache.length;
+      console.log(`Community score from cache: ${Math.round(avgCommunityScore)}`);
+      return Math.round(avgCommunityScore);
+    }
+
+    // Fallback: direct DB query with wider radius
     const ratings = await RouteRating.find({
       $or: [
         {
-          'sourceCoords.lat': { $gte: start[0] - 0.02, $lte: start[0] + 0.02 },
-          'sourceCoords.lng': { $gte: start[1] - 0.02, $lte: start[1] + 0.02 }
+          'sourceCoords.lat': { $gte: start[0] - 0.05, $lte: start[0] + 0.05 },
+          'sourceCoords.lng': { $gte: start[1] - 0.05, $lte: start[1] + 0.05 }
         },
         {
-          'destCoords.lat': { $gte: end[0] - 0.02, $lte: end[0] + 0.02 },
-          'destCoords.lng': { $gte: end[1] - 0.02, $lte: end[1] + 0.02 }
+          'destCoords.lat': { $gte: end[0] - 0.05, $lte: end[0] + 0.05 },
+          'destCoords.lng': { $gte: end[1] - 0.05, $lte: end[1] + 0.05 }
         }
       ]
-    }).limit(30);
+    }).limit(50);
 
-    if (ratings.length === 0) return 70;
+    if (ratings.length === 0) return 70; // neutral default
+
     const avg = ratings.reduce((s, r) => s + r.rating, 0) / ratings.length;
     return Math.round((avg / 5) * 100);
-  } catch {
+  } catch (err) {
+    console.error('Community score error:', err.message);
     return 70;
   }
 };
@@ -166,36 +188,46 @@ const getCommunityScore = async (routeCoords) => {
 // ─── MASTER SCORING FUNCTION ──────────────────────────────────────────
 const calculateRouteScore = async (route, allRoutes, weatherData) => {
 
-  // Run all queries in parallel for speed
+  // Sample coordinates: different sections of the route
+  const coords   = route.coordinates;
+  const len      = coords.length;
+  
+  // Take start, 25%, 50%, 75%, end for crime/lighting
+  const samplePoints = [
+    coords[0],
+    coords[Math.floor(len * 0.25)],
+    coords[Math.floor(len * 0.5)],
+    coords[Math.floor(len * 0.75)],
+    coords[len - 1]
+  ].filter(Boolean);
+
+  // Run all scoring in parallel
   const [crimeScore, lightingScore, crowdScore, communityScore] = await Promise.all([
-    getCrimeScore(route.coordinates),
-    getLightingScore(route.coordinates),
-    getCrowdScore(route.coordinates),
-    getCommunityScore(route.coordinates)
+    getCrimeScore(coords),           // full route
+    getLightingScore(samplePoints),  // sampled points
+    getCrowdScore(samplePoints),     // sampled points
+    getCommunityScore(coords)
   ]);
 
-  // Weather score from OpenWeatherMap
+  // Weather score
   let weatherScore = 80;
   if (weatherData?.weather?.[0]?.main) {
-    const map = {
-      'Clear': 100, 'Clouds': 75, 'Drizzle': 60,
-      'Rain': 40, 'Thunderstorm': 10, 'Snow': 30,
-      'Mist': 50, 'Fog': 35, 'Haze': 65
-    };
-    weatherScore = map[weatherData.weather[0].main] || 70;
+    const wmap = { Clear:100, Clouds:75, Drizzle:60, Rain:40, Thunderstorm:10, Snow:30, Mist:50, Fog:35, Haze:65 };
+    weatherScore = wmap[weatherData.weather[0].main] || 70;
   }
 
-  // Route efficiency
+  // CRITICAL: Distance efficiency vs shortest route
   const shortestDist = Math.min(...allRoutes.map(r => r.distance));
-  const ratio = route.distance / shortestDist;
-  let efficiencyScore = 100;
-  if (ratio > 1.60) efficiencyScore = 10;
-  else if (ratio > 1.45) efficiencyScore = 35;
-  else if (ratio > 1.30) efficiencyScore = 55;
-  else if (ratio > 1.15) efficiencyScore = 75;
-  else if (ratio > 1.0)  efficiencyScore = 90;
+  const ratio        = route.distance / shortestDist;
+  let efficiencyScore;
+  if      (ratio <= 1.00) efficiencyScore = 100;
+  else if (ratio <= 1.15) efficiencyScore = 88;
+  else if (ratio <= 1.30) efficiencyScore = 72;
+  else if (ratio <= 1.50) efficiencyScore = 52;
+  else if (ratio <= 1.80) efficiencyScore = 30;
+  else                    efficiencyScore = 12;
 
-  const total = (
+  const total = Math.round(
     crimeScore      * 0.30 +
     lightingScore   * 0.25 +
     crowdScore      * 0.20 +
@@ -205,7 +237,7 @@ const calculateRouteScore = async (route, allRoutes, weatherData) => {
   );
 
   return {
-    total: Math.round(Math.max(0, Math.min(100, total))),
+    total: Math.max(0, Math.min(100, total)),
     breakdown: {
       crime:      Math.round(crimeScore),
       lighting:   Math.round(lightingScore),

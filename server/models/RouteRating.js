@@ -11,6 +11,12 @@ const routeRatingSchema = new mongoose.Schema({
     lat: { type: Number, required: true },
     lng: { type: Number, required: true }
   },
+  
+  sourceAddress: { type: String, default: 'Unknown location' },
+  destAddress:   { type: String, default: 'Unknown location' },
+  routeLabel:    { type: String, default: '' },
+  city:          { type: String, default: '' },
+  
   rating: { type: Number, min: 1, max: 5, required: true },
   likes: [String],
   dislikes: [String],
