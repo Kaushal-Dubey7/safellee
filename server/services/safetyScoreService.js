@@ -3,39 +3,39 @@ const fetch = require('node-fetch');
 const CrimeZone = require('../models/CrimeZone');
 const RouteRating = require('../models/RouteRating');
 const RouteScoreCache = require('../models/RouteScoreCache');
+const { queryOverpass, getCacheKey } = require('../utils/overpassClient');
+const { calculateFinalSafetyScore } = require('./mlIntegration');
+const { getStateBaseline } = require('./stateBaseline');
 
 // ─── LIGHTING: Query real street lamps from OpenStreetMap ────────────
 const getLightingScore = async (routeCoords) => {
   try {
-    // Sample start, middle and end of route for lamp queries
     const samplePoints = [
       routeCoords[0],
       routeCoords[Math.floor(routeCoords.length / 2)],
       routeCoords[routeCoords.length - 1]
     ];
 
+    // Run all 3 sample point queries in PARALLEL, not sequentially
+    const results = await Promise.allSettled(
+      samplePoints.map(point => {
+        const cacheKey = getCacheKey(point[0], point[1], 'lighting');
+        const query = `
+          [out:json][timeout:5];
+          node[highway=street_lamp](around:200,${point[0]},${point[1]});
+          out count;
+        `;
+        return queryOverpass(query, cacheKey);
+      })
+    );
+
     let totalLamps = 0;
-
-    for (const point of samplePoints) {
-      const lat = point[0];
-      const lng = point[1];
-      
-      const query = `
-        [out:json][timeout:10];
-        node[highway=street_lamp](around:200,${lat},${lng});
-        out count;
-      `;
-
-      const res = await fetch('https://overpass-api.de/api/interpreter', {
-        method: 'POST',
-        body: query,
-        headers: { 'Content-Type': 'text/plain' }
-      });
-
-      const data = await res.json();
-      const count = data?.elements?.[0]?.tags?.total || 0;
-      totalLamps += parseInt(count);
-    }
+    results.forEach(result => {
+      if (result.status === 'fulfilled') {
+        const count = result.value?.elements?.[0]?.tags?.total || 0;
+        totalLamps += parseInt(count);
+      }
+    });
 
     // Calculate lighting score from lamp density
     // 30+ lamps across 3 sample points = well lit = score 100
@@ -50,7 +50,7 @@ const getLightingScore = async (routeCoords) => {
     return Math.max(20, Math.round(finalScore));
     
   } catch (err) {
-    console.log('Lighting query failed, using fallback:', err.message);
+    console.log('Lighting query completely failed, using fallback:', err.message);
     return 60; // safe fallback
   }
 };
@@ -58,30 +58,22 @@ const getLightingScore = async (routeCoords) => {
 // ─── CROWD: Query amenity density from OpenStreetMap ─────────────────
 const getCrowdScore = async (routeCoords) => {
   try {
-    // Use midpoint of route as the area representative point
     const midPoint = routeCoords[Math.floor(routeCoords.length / 2)];
     const lat = midPoint[0];
     const lng = midPoint[1];
+    const cacheKey = getCacheKey(lat, lng, 'crowd');
 
-    // Count amenities (shops, restaurants, offices = busy area = safer)
     const query = `
       [out:json][timeout:10];
       (
         node[amenity~"restaurant|cafe|shop|bank|hospital|school|office|market|bus_station"](around:500,${lat},${lng});
-        way[amenity~"restaurant|cafe|shop|bank|hospital|school|office|market"](around:500,${lat},${lng});
         node[shop](around:500,${lat},${lng});
         node[office](around:500,${lat},${lng});
       );
       out count;
     `;
 
-    const res = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST',
-      body: query,
-      headers: { 'Content-Type': 'text/plain' }
-    });
-
-    const data = await res.json();
+    const data = await queryOverpass(query, cacheKey);
     const amenityCount = data?.elements?.[0]?.tags?.total || 0;
 
     // More amenities = more crowd = safer
@@ -101,7 +93,7 @@ const getCrowdScore = async (routeCoords) => {
     return Math.round(Math.min(100, baseScore * timeMultiplier));
 
   } catch (err) {
-    console.log('Crowd query failed, using time-based fallback:', err.message);
+    console.log('Crowd query completely failed, using time-based fallback:', err.message);
     
     // Time-based fallback if Overpass fails
     const hour = new Date().getHours();
@@ -188,25 +180,11 @@ const getCommunityScore = async (routeCoords) => {
 // ─── MASTER SCORING FUNCTION ──────────────────────────────────────────
 const calculateRouteScore = async (route, allRoutes, weatherData) => {
 
-  // Sample coordinates: different sections of the route
-  const coords   = route.coordinates;
-  const len      = coords.length;
-  
-  // Take start, 25%, 50%, 75%, end for crime/lighting
-  const samplePoints = [
-    coords[0],
-    coords[Math.floor(len * 0.25)],
-    coords[Math.floor(len * 0.5)],
-    coords[Math.floor(len * 0.75)],
-    coords[len - 1]
-  ].filter(Boolean);
-
-  // Run all scoring in parallel
   const [crimeScore, lightingScore, crowdScore, communityScore] = await Promise.all([
-    getCrimeScore(coords),           // full route
-    getLightingScore(samplePoints),  // sampled points
-    getCrowdScore(samplePoints),     // sampled points
-    getCommunityScore(coords)
+    getCrimeScore(route.coordinates),
+    getLightingScore(route.coordinates),
+    getCrowdScore(route.coordinates),
+    getCommunityScore(route.coordinates)
   ]);
 
   // Weather score
@@ -227,24 +205,40 @@ const calculateRouteScore = async (route, allRoutes, weatherData) => {
   else if (ratio <= 1.80) efficiencyScore = 30;
   else                    efficiencyScore = 12;
 
-  const total = Math.round(
-    crimeScore      * 0.30 +
-    lightingScore   * 0.25 +
-    crowdScore      * 0.20 +
-    weatherScore    * 0.10 +
-    efficiencyScore * 0.10 +
-    communityScore  * 0.05
+  // Get real state baseline
+  const midPoint = route.coordinates[Math.floor(route.coordinates.length / 2)];
+  const geoRes = await fetch(
+    `https://nominatim.openstreetmap.org/reverse?lat=${midPoint[0]}&lon=${midPoint[1]}&format=json`,
+    { headers: { 'User-Agent': 'Safelle-App/1.0' } }
   );
+  const geoData = await geoRes.json();
+  const stateName = geoData.address?.state || null;
+  const stateBaseline = getStateBaseline(stateName);
+
+  // THIS IS THE CRITICAL LINE — result.total MUST be what gets returned
+  const result = await calculateFinalSafetyScore({
+    crime: crimeScore,
+    lighting: lightingScore,
+    crowd: crowdScore,
+    weather: weatherScore,
+    efficiency: efficiencyScore,
+    community: communityScore,
+    state_baseline: stateBaseline
+  });
+
+  console.log(`🎯 Route ${route.distanceKm}km → FINAL score: ${result.total} (source: ${result.source})`);
 
   return {
-    total: Math.max(0, Math.min(100, total)),
+    total: result.total,
+    scoringMethod: result.source,
     breakdown: {
-      crime:      Math.round(crimeScore),
-      lighting:   Math.round(lightingScore),
-      crowd:      Math.round(crowdScore),
-      weather:    Math.round(weatherScore),
+      crime: Math.round(crimeScore),
+      lighting: Math.round(lightingScore),
+      crowd: Math.round(crowdScore),
+      weather: Math.round(weatherScore),
       efficiency: Math.round(efficiencyScore),
-      community:  Math.round(communityScore)
+      community: Math.round(communityScore),
+      stateBaseline: Math.round(stateBaseline)
     }
   };
 };

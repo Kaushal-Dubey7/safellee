@@ -49,7 +49,9 @@ export const SOSProvider = ({ children }) => {
 
       // Capacitor auto-call (APK only) — as additional layer
       if (window.Capacitor?.isNativePlatform()) {
-        const { PhoneCall } = await import(/* @vite-ignore */ '@capacitor-community/phone-call');
+        // Build the module path dynamically so Vite doesn't try to resolve it at dev time
+        const phonePkg = '@capacitor-community/' + 'phone-call';
+        const { PhoneCall } = await import(/* @vite-ignore */ phonePkg);
         for (const contact of responseData.contactsNotified) {
           try {
             await PhoneCall.call({ number: contact.phone });

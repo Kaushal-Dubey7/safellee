@@ -3,6 +3,8 @@ import api from './api';
 export const fetchSafeRoutes = async (sourceLat, sourceLng, destLat, destLng) => {
   const response = await api.post('/api/route/safe-routes', {
     sourceLat, sourceLng, destLat, destLng
+  }, {
+    timeout: 25000
   });
   return response.data;
 };

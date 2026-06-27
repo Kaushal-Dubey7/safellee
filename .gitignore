@@ -33,3 +33,9 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+
+# Python (for safelle-ml-service)
+safelle-ml-service/__pycache__/
+safelle-ml-service/venv/
+safelle-ml-service/.venv/
+safelle-ml-service/*.pyc

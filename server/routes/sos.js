@@ -11,16 +11,14 @@ const {
   alertPoliceStation 
 } = require('../services/twilioService');
 
-// Fetch nearest police station from Overpass
+// Fetch nearest police station via robust Overpass client
+const { queryOverpass, getCacheKey } = require('../utils/overpassClient');
+
 const getNearestPoliceStation = async (lat, lng) => {
   try {
-    const fetch = require('node-fetch');
     const query = `[out:json][timeout:10];node[amenity=police](around:3000,${lat},${lng});out body;`;
-    const res = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST',
-      body: query
-    });
-    const data = await res.json();
+    const cacheKey = getCacheKey(lat, lng, 'sos_police');
+    const data = await queryOverpass(query, cacheKey);
     if (!data.elements || data.elements.length === 0) return null;
     
     const station = data.elements[0];

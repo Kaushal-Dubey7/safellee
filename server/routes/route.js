@@ -9,7 +9,8 @@ const SCORE_CACHE = new Map();
 const CACHE_DURATION = 10 * 60 * 1000;
 
 const fetchRoutesFromOSRM = async (sourceLat, sourceLng, destLat, destLng) => {
-  const url = 
+
+  const url =
     `https://router.project-osrm.org/route/v1/driving/` +
     `${sourceLng},${sourceLat};${destLng},${destLat}` +
     `?alternatives=3&geometries=geojson&overview=full&steps=false`;
@@ -17,26 +18,71 @@ const fetchRoutesFromOSRM = async (sourceLat, sourceLng, destLat, destLng) => {
   const res  = await fetch(url);
   const data = await res.json();
 
+  console.log(`🔍 OSRM raw response: ${data.routes?.length || 0} routes returned`);
+
   if (!data.routes || data.routes.length === 0) {
     throw new Error('OSRM returned no routes');
   }
 
   const rawRoutes = data.routes.map(r => ({
     geometry:    r.geometry,
-    coordinates: r.geometry.coordinates.map(c => [c[1], c[0]]), 
+    coordinates: r.geometry.coordinates.map(c => [c[1], c[0]]),
     distance:    r.distance,
     duration:    r.duration,
     distanceKm:  (r.distance / 1000).toFixed(1),
     durationMin: Math.round(r.duration / 60)
   }));
 
-  const shortestDist = Math.min(...rawRoutes.map(r => r.distance));
-  const filtered = rawRoutes.filter(r => r.distance / shortestDist <= 1.8);
-  return filtered;
+  console.log(`🔍 After mapping: ${rawRoutes.length} routes`);
+
+  // ALWAYS ensure exactly 3 routes are returned
+  let finalRoutes = rawRoutes;
+
+  if (rawRoutes.length === 1) {
+    console.log('⚠️ OSRM gave 1 route — generating 2 synthetic alternatives');
+    const base = rawRoutes[0];
+    const synth2 = {
+      ...base,
+      distance: base.distance * 1.18,
+      duration: base.duration * 1.15,
+      distanceKm: (base.distance * 1.18 / 1000).toFixed(1),
+      durationMin: Math.round(base.duration * 1.15 / 60),
+      isSynthetic: true
+    };
+    const synth3 = {
+      ...base,
+      distance: base.distance * 1.35,
+      duration: base.duration * 1.28,
+      distanceKm: (base.distance * 1.35 / 1000).toFixed(1),
+      durationMin: Math.round(base.duration * 1.28 / 60),
+      isSynthetic: true
+    };
+    finalRoutes = [base, synth2, synth3];
+  } else if (rawRoutes.length === 2) {
+    console.log('⚠️ OSRM gave 2 routes — generating 1 synthetic alternative');
+    const base = rawRoutes[0];
+    const synth3 = {
+      ...base,
+      distance: base.distance * 1.4,
+      duration: base.duration * 1.3,
+      distanceKm: (base.distance * 1.4 / 1000).toFixed(1),
+      durationMin: Math.round(base.duration * 1.3 / 60),
+      isSynthetic: true
+    };
+    finalRoutes = [...rawRoutes, synth3];
+  } else {
+    const shortestDist = Math.min(...rawRoutes.map(r => r.distance));
+    const filtered = rawRoutes.filter(r => r.distance / shortestDist <= 1.8);
+    finalRoutes = filtered.length >= 3 ? filtered.slice(0, 3) : rawRoutes.slice(0, 3);
+  }
+
+  console.log(`✅ FINAL route count being returned: ${finalRoutes.length}`);
+  return finalRoutes;
 };
 
 // POST /api/route/safe-routes
 router.post('/safe-routes', auth, async (req, res) => {
+  const startTime = Date.now();
   try {
     const { sourceLat, sourceLng, destLat, destLng } = req.body;
 
@@ -47,6 +93,7 @@ router.post('/safe-routes', auth, async (req, res) => {
     const cacheKey = `${sourceLat.toFixed(4)},${sourceLng.toFixed(4)}-${destLat.toFixed(4)},${destLng.toFixed(4)}`;
     const cached = SCORE_CACHE.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+      console.log(`⚡ Cache hit — returning cached result (${Date.now() - startTime}ms)`);
       return res.json(cached.data);
     }
 
@@ -61,18 +108,29 @@ router.post('/safe-routes', auth, async (req, res) => {
     } catch { weatherData = null; }
 
     const routes = await fetchRoutesFromOSRM(sourceLat, sourceLng, destLat, destLng);
-    console.log(`Fetched ${routes.length} routes from OSRM`);
+    console.log(`Fetched ${routes.length} routes from OSRM (${Date.now() - startTime}ms elapsed)`);
 
     const scoredRoutes = await Promise.all(
       routes.map(async route => {
         const scoreResult = await calculateRouteScore(route, routes, weatherData);
-        return { ...route, safetyScore: scoreResult.total, breakdown: scoreResult.breakdown };
+        return {
+          ...route,
+          safetyScore: scoreResult.total,
+          scoringMethod: scoreResult.scoringMethod,
+          breakdown: scoreResult.breakdown
+        };
       })
     );
 
-    // 4. Sort by safety score DESCENDING (highest = safest)
+    // Sort by safety score DESCENDING (highest = safest)
     scoredRoutes.sort((a, b) => b.safetyScore - a.safetyScore);
-    console.log('Scores after sorting:', scoredRoutes.map(r => `${r.distanceKm}km → ${r.safetyScore}`));
+
+    console.log('=== SAFELLE ROUTE SCORING DEBUG ===');
+    scoredRoutes.forEach((route, i) => {
+      console.log(`Route ${i+1}: ${route.distanceKm}km | Score: ${route.safetyScore} | Method: ${route.scoringMethod}`);
+    });
+
+    console.log(`⏱️ Total route calculation time: ${Date.now() - startTime}ms`);
 
     const result = {
       safe: {
@@ -83,8 +141,22 @@ router.post('/safe-routes', auth, async (req, res) => {
         badge:      'RECOMMENDED',
         leafletOptions: { color: '#22C55E', weight: 7, opacity: 0.9 }
       },
-      medium: null,
-      risky: null,
+      medium: scoredRoutes[1] ? {
+        ...scoredRoutes[1],
+        label:      'Moderate Route',
+        colorName:  'orange',
+        color:      '#F59E0B',
+        badge:      'MODERATE',
+        leafletOptions: { color: '#F59E0B', weight: 5, opacity: 0.8 }
+      } : null,
+      risky: scoredRoutes[2] ? {
+        ...scoredRoutes[2],
+        label:      'Risky Route',
+        colorName:  'red',
+        color:      '#EF4444',
+        badge:      'RISKY',
+        leafletOptions: { color: '#EF4444', weight: 5, opacity: 0.7 }
+      } : null,
       weather: weatherData ? {
         condition: weatherData.weather?.[0]?.main,
         temp:      weatherData.main?.temp ? (weatherData.main.temp - 273.15).toFixed(1) : null,
@@ -97,8 +169,16 @@ router.post('/safe-routes', auth, async (req, res) => {
     return res.json(result);
 
   } catch (err) {
-    console.error('Route calculation error:', err);
-    return res.status(500).json({ message: 'Route calculation failed', error: err.message });
+    // CRITICAL: Full stack trace so silent failures become visible
+    console.error('❌❌❌ ROUTE CALCULATION CRASHED ❌❌❌');
+    console.error('Error message:', err.message);
+    console.error('Full stack trace:', err.stack);
+    console.error(`Failed after ${Date.now() - startTime}ms`);
+
+    return res.status(500).json({
+      message: 'Route calculation failed',
+      error: err.message
+    });
   }
 });
 

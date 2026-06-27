@@ -53,20 +53,13 @@ const MapViewController = ({ routes, livePosition, showSource, showDest, followU
   // FIX 1: Fit Bounds for Routes
   useEffect(() => {
     if (followUser) return;
-    if (routes && (routes.safe || routes.medium || routes.risky)) {
-      const allCoords = [];
-      if (routes.safe && routes.safe.coordinates) allCoords.push(...routes.safe.coordinates);
-      if (routes.medium && routes.medium.coordinates) allCoords.push(...routes.medium.coordinates);
-      if (routes.risky && routes.risky.coordinates) allCoords.push(...routes.risky.coordinates);
-
-      if (allCoords.length > 0) {
-        map.fitBounds(L.latLngBounds(allCoords), {
-          padding: [60, 60],
-          maxZoom: 15,
-          animate: true,
-          duration: 1.0
-        });
-      }
+    if (routes && routes.safe && routes.safe.coordinates) {
+      map.fitBounds(L.latLngBounds(routes.safe.coordinates), {
+        padding: [60, 60],
+        maxZoom: 15,
+        animate: true,
+        duration: 1.0
+      });
     }
   }, [routes, map, followUser]);
 
@@ -142,22 +135,16 @@ const MapView = ({
         />
 
         {/* Routes */}
-        {routes && Object.entries(routes).map(([key, route]) => {
-          if (!route?.coordinates) return null;
-          const style = routeColors[key] || routeColors.risky;
-          const isSelected = key === selectedRouteKey;
-          return (
-            <Polyline
-              key={key}
-              positions={route.coordinates}
-              pathOptions={{
-                ...style,
-                weight: isSelected ? style.weight + 2 : style.weight,
-                opacity: isSelected ? 1 : style.opacity * 0.5
-              }}
-            />
-          );
-        })}
+        {routes && routes.safe && routes.safe.coordinates && (
+          <Polyline
+            positions={routes.safe.coordinates}
+            pathOptions={{
+              color: '#22C55E',
+              weight: 7,
+              opacity: 0.9
+            }}
+          />
+        )}
 
         {/* Source marker */}
         {showSource && (

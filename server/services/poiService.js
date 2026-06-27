@@ -1,16 +1,16 @@
-const fetch = require('node-fetch');
+const { queryOverpass, getCacheKey } = require('../utils/overpassClient');
 
 const POI_CACHE = new Map();
 const CACHE_DURATION = 5 * 60 * 1000;
 
-const getCacheKey = (lat, lng, type) => {
+const getPOICacheKey = (lat, lng, type) => {
   const roundedLat = Math.round(lat * 200) / 200;
   const roundedLng = Math.round(lng * 200) / 200;
   return `${roundedLat},${roundedLng},${type}`;
 };
 
 const fetchNearbyPOI = async (lat, lng, type, radius = 2000) => {
-  const cacheKey = getCacheKey(lat, lng, type);
+  const cacheKey = getPOICacheKey(lat, lng, type);
   const cached = POI_CACHE.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
     return cached.data;
@@ -26,17 +26,8 @@ const fetchNearbyPOI = async (lat, lng, type, radius = 2000) => {
   const query = `[out:json][timeout:10];node[amenity=${amenity}](around:${radius},${lat},${lng});out body 3;`;
 
   try {
-    const response = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `data=${encodeURIComponent(query)}`
-    });
-
-    if (!response.ok) {
-      throw new Error(`Overpass API error: ${response.status}`);
-    }
-
-    const data = await response.json();
+    const overpassCacheKey = getCacheKey(lat, lng, `poi_${type}`);
+    const data = await queryOverpass(query, overpassCacheKey);
     const results = (data.elements || []).slice(0, 3).map(el => ({
       id: el.id,
       name: (el.tags && el.tags.name) || `${type.charAt(0).toUpperCase() + type.slice(1)}`,
@@ -59,15 +50,8 @@ const fetchNearestPoliceStation = async (lat, lng) => {
   const query = `[out:json][timeout:10];node[amenity=police](around:3000,${lat},${lng});out body 1;`;
 
   try {
-    const response = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `data=${encodeURIComponent(query)}`
-    });
-
-    if (!response.ok) return null;
-
-    const data = await response.json();
+    const overpassCacheKey = getCacheKey(lat, lng, 'poi_police_nearest');
+    const data = await queryOverpass(query, overpassCacheKey);
     if (!data.elements || data.elements.length === 0) return null;
 
     const station = data.elements[0];

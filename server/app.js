@@ -72,4 +72,24 @@ server.listen(PORT, () => {
   console.log(`🌐 Client URL: ${process.env.CLIENT_URL || 'http://localhost:5173'}\n`);
 });
 
+const checkOverpassConnectivity = async () => {
+  try {
+    const fetch = require('node-fetch');
+    const res = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      body: '[out:json];node(1);out;',
+      signal: AbortSignal.timeout(5000)
+    });
+    console.log(`🌐 Overpass connectivity check: ${res.ok ? '✅ REACHABLE' : '⚠️ REACHABLE BUT ERROR ' + res.status}`);
+  } catch (err) {
+    console.log(`🌐 Overpass connectivity check: ❌ UNREACHABLE (${err.message})`);
+    console.log('⚠️ If this fails, your hosting/dev environment likely blocks this domain.');
+    console.log('⚠️ Check Antigravity/hosting network settings for outbound domain restrictions.');
+    console.log('⚠️ The app will rely on time-of-day fallback scores for lighting/crowd until this is resolved.');
+  }
+};
+
+// Call this once after server starts
+checkOverpassConnectivity();
+
 module.exports = { app, server, io };

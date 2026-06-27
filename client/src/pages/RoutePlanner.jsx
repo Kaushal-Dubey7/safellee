@@ -5,7 +5,7 @@ import useGeolocation from '../hooks/useGeolocation';
 import { fetchSafeRoutes, geocodeAddress, reverseGeocode } from '../services/routeService';
 import Navbar from '../components/Navbar';
 import MapView from '../components/MapView';
-import RoutePanel from '../components/RoutePanel';
+import RouteResultCard from '../components/RouteResultCard';
 import SOSButton from '../components/SOSButton';
 
 const RoutePlanner = () => {
@@ -111,21 +111,29 @@ const RoutePlanner = () => {
       setRoutes(data);
       setSelectedRoute('safe');
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to find routes. Please try again.');
+      console.error('Route finding error:', err);
+      if (err.code === 'ECONNABORTED') {
+        setError('Request took too long. Please try again — the safety servers may be busy.');
+      } else if (err.response?.data?.message) {
+        setError(err.response.data.message);
+      } else if (err.response?.data?.error) {
+        setError(err.response.data.error);
+      } else {
+        setError('Failed to find routes. Please try again.');
+      }
     } finally {
       setFetchingRoutes(false);
     }
   };
 
-  const handleStartJourney = async () => {
-    if (!routes) return;
+  const handleStartJourney = async (route) => {
+    if (!route) return;
     try {
-      const routeData = routes[selectedRoute];
       await startJourney({
         source: { name: source.name, coordinates: { lat: source.lat, lng: source.lng } },
         destination: { name: dest.name, coordinates: { lat: dest.lat, lng: dest.lng } },
-        selectedRoute,
-        safetyScore: routeData?.score || 0
+        selectedRoute: 'safe',
+        safetyScore: route.safetyScore || 0
       });
       navigate('/journey/active');
     } catch (err) {
@@ -251,13 +259,16 @@ const RoutePlanner = () => {
             ) : '🔍 Find Safe Routes'}
           </button>
 
+          {fetchingRoutes && (
+            <div style={{ textAlign: 'center', color: '#666', fontSize: 13, marginTop: 8 }}>
+              <p>Analyzing crime data, lighting, and crowd density for your route...</p>
+            </div>
+          )}
+
           {/* Route panel */}
-          <RoutePanel
-            routes={routes}
-            selectedRoute={selectedRoute}
-            onSelectRoute={setSelectedRoute}
+          <RouteResultCard
+            routeData={routes}
             onStartJourney={handleStartJourney}
-            loading={loading}
           />
         </div>
 
