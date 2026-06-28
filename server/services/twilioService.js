@@ -64,38 +64,55 @@ const sendSOSToAllContacts = async (contacts, userName, lat, lng) => {
   return { sent, failed, total: results.length };
 };
 
+// ─── XML ESCAPE — prevents & < > " ' in names/addresses from breaking TwiML ──
+const xmlEscape = (str) => {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+};
+
 // ─── AUTO CALL VIA TWILIO (browser fallback when APK not available) ───
 const makeEmergencyCall = async (toPhone, userName, lat, lng, address = 'an unknown location') => {
   try {
     const formattedPhone = formatPhoneForTwilio(toPhone);
-    const mapLink = `https://maps.google.com/?q=${lat},${lng}`;
-    
-    // Safer TwiML execution using official builder instead of raw XML string
-    const VoiceResponse = twilio.twiml.VoiceResponse;
-    const response = new VoiceResponse();
-    
-    response.say(
-      { voice: 'Polly.Aditi', language: 'en-IN' }, 
-      `Emergency Alert from Safelle. ${userName} may be in danger and needs your help immediately. Her last known location is near ${address}. Please check on her or call one one two immediately. This message will repeat.`
-    );
-    response.pause({ length: 1 });
-    response.say(
-      { voice: 'Polly.Aditi', language: 'en-IN' }, 
-      `Emergency Alert from Safelle. ${userName} may be in danger. Her last known location is near ${address}.`
-    );
+    const safeName = xmlEscape(userName || 'A Safelle user');
+    const safeAddress = xmlEscape(address || 'an unknown location');
+
+    // Exact required message with a short pause before speaking so
+    // the very first word is never clipped by the call connecting
+    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Pause length="1"/>
+  <Say voice="Polly.Aditi" language="en-IN">
+    Emergency Alert from Safelle. ${safeName} may be in danger. Her last known location is near ${safeAddress}.
+  </Say>
+  <Pause length="1"/>
+  <Say voice="Polly.Aditi" language="en-IN">
+    Repeating. Emergency Alert from Safelle. ${safeName} may be in danger. Her last known location is near ${safeAddress}.
+  </Say>
+</Response>`;
+
+    console.log(`📞 Placing Twilio voice call to ${formattedPhone} with message for ${safeName}`);
 
     const call = await client.calls.create({
-      twiml: response.toString(),
+      twiml: twiml,
       to: formattedPhone,
       from: TWILIO_NUMBER
     });
 
-    console.log(`✅ Call initiated to ${formattedPhone} | SID: ${call.sid}`);
-    return { success: true, sid: call.sid };
+    console.log(`✅ Twilio call created — SID: ${call.sid}, status: ${call.status}`);
+    return { success: true, sid: call.sid, status: call.status };
 
   } catch (err) {
-    console.error(`❌ Call failed to ${toPhone}:`, err.message);
-    return { success: false, error: err.message };
+    console.error(`❌ Twilio call FAILED to ${toPhone}`);
+    console.error(`   Error code: ${err.code}`);
+    console.error(`   Error message: ${err.message}`);
+    console.error(`   More info: ${err.moreInfo || 'n/a'}`);
+    return { success: false, error: err.message, code: err.code };
   }
 };
 

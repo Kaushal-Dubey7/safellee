@@ -98,6 +98,7 @@ router.post('/trigger', auth, async (req, res) => {
     );
 
     // 5. Make calls to ALL contacts via Twilio
+    console.log(`🚨 SOS triggered (${triggerType || 'manual'}) for ${user.fullName} at ${readableAddress}`);
     const callResults = await callAllContacts(
       contacts,
       user.fullName,
