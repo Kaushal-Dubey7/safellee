@@ -207,12 +207,19 @@ const calculateRouteScore = async (route, allRoutes, weatherData) => {
 
   // Get real state baseline
   const midPoint = route.coordinates[Math.floor(route.coordinates.length / 2)];
-  const geoRes = await fetch(
-    `https://nominatim.openstreetmap.org/reverse?lat=${midPoint[0]}&lon=${midPoint[1]}&format=json`,
-    { headers: { 'User-Agent': 'Safelle-App/1.0' } }
-  );
-  const geoData = await geoRes.json();
-  const stateName = geoData.address?.state || null;
+  let stateName = null;
+  try {
+    const geoRes = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${midPoint[0]}&lon=${midPoint[1]}&format=json`,
+      { headers: { 'User-Agent': 'Safelle-App/1.0 (contact: user@safelle.com)' } }
+    );
+    if (geoRes.ok) {
+      const geoData = await geoRes.json();
+      stateName = geoData.address?.state || null;
+    }
+  } catch (err) {
+    console.log('Nominatim reverse geocoding failed, using fallback:', err.message);
+  }
   const stateBaseline = getStateBaseline(stateName);
 
   // THIS IS THE CRITICAL LINE — result.total MUST be what gets returned
