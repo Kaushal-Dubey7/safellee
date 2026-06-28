@@ -14,6 +14,7 @@ import SOSPage from './pages/SOSPage';
 import LovedOnes from './pages/LovedOnes';
 import CommunityRatings from './pages/CommunityRatings';
 import Profile from './pages/Profile';
+import SystemHealth from './pages/SystemHealth';
 
 const ProtectedRoute = ({ children, requireProfile = true }) => {
   const { isAuthenticated, isProfileComplete, loading } = useAuth();
@@ -98,6 +99,9 @@ const App = () => {
               } />
               <Route path="/profile" element={
                 <ProtectedRoute><Profile /></ProtectedRoute>
+              } />
+              <Route path="/system-health" element={
+                <ProtectedRoute><SystemHealth /></ProtectedRoute>
               } />
 
               {/* 404 fallback */}

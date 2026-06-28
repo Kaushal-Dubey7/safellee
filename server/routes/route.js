@@ -4,6 +4,7 @@ const fetch = require('node-fetch');
 const auth = require('../middleware/auth');
 const { calculateRouteScore } = require('../services/safetyScoreService');
 const { fetchWeather } = require('../services/weatherService');
+const { getCurrentHealthState } = require('../services/healthMonitorService');
 
 const SCORE_CACHE = new Map();
 const CACHE_DURATION = 10 * 60 * 1000;
@@ -165,20 +166,41 @@ router.post('/safe-routes', auth, async (req, res) => {
       totalRoutesFound: routes.length
     };
 
+    const health = getCurrentHealthState();
+    const diagnostics = [];
+
+    if (health.services?.overpass?.status === 'down') {
+      diagnostics.push('Street lighting and crowd analysis temporarily limited — using time-based estimates instead of live map data.');
+    }
+    if (health.services?.weather?.status !== 'healthy') {
+      diagnostics.push('Live weather data unavailable — using a neutral weather assumption for this route.');
+    }
+    if (health.services?.mlService?.status !== 'healthy') {
+      diagnostics.push('Using our verified scoring formula — ML model temporarily unavailable.');
+    }
+
+    result.diagnostics = diagnostics;
+    result.systemStatus = health.overall;
+
     SCORE_CACHE.set(cacheKey, { data: result, timestamp: Date.now() });
     return res.json(result);
 
   } catch (err) {
-    // CRITICAL: Full stack trace so silent failures become visible
-    console.error('❌❌❌ ROUTE CALCULATION CRASHED ❌❌❌');
-    console.error('Error message:', err.message);
+    console.error('❌ ROUTE CALCULATION CRASHED:', err.message);
     console.error('Full stack trace:', err.stack);
     console.error(`Failed after ${Date.now() - startTime}ms`);
+    const health = getCurrentHealthState();
 
-    return res.status(500).json({
-      message: 'Route calculation failed',
-      error: err.message
-    });
+    let userMessage = 'Route calculation failed. Please try again.';
+    if (health.overall === 'down') {
+      const downService = Object.entries(health.services)
+        .find(([, s]) => s.status === 'down');
+      if (downService) {
+        userMessage = `Our ${downService[0]} service is currently unavailable. Our team has been notified. Please try again in a moment.`;
+      }
+    }
+
+    return res.status(500).json({ message: userMessage, error: err.message, systemStatus: health.overall });
   }
 });
 

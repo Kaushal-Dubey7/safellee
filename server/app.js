@@ -16,6 +16,9 @@ const journeyRoutes = require('./routes/journey');
 const sosRoutes = require('./routes/sos');
 const ratingsRoutes = require('./routes/ratings');
 const poiRoutes = require('./routes/poi');
+const healthRoutes = require('./routes/health');
+const { runHealthChecks, getCurrentHealthState } = require('./services/healthMonitorService');
+const SystemHealthLog = require('./models/SystemHealthLog');
 
 const app = express();
 const server = http.createServer(app);
@@ -53,10 +56,7 @@ app.use('/api/journey', journeyRoutes);
 app.use('/api/sos', sosRoutes);
 app.use('/api/ratings', ratingsRoutes);
 app.use('/api/poi', poiRoutes);
-
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
+app.use('/api/health', healthRoutes);
 
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);
@@ -72,24 +72,33 @@ server.listen(PORT, () => {
   console.log(`🌐 Client URL: ${process.env.CLIENT_URL || 'http://localhost:5173'}\n`);
 });
 
-const checkOverpassConnectivity = async () => {
+// ─── SELF-DIAGNOSIS: Health Check Scheduler ─────────────────────────
+let lastBroadcastOverall = null;
+
+const performHealthCheckCycle = async () => {
   try {
-    const fetch = require('node-fetch');
-    const res = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST',
-      body: '[out:json];node(1);out;',
-      signal: AbortSignal.timeout(5000)
-    });
-    console.log(`🌐 Overpass connectivity check: ${res.ok ? '✅ REACHABLE' : '⚠️ REACHABLE BUT ERROR ' + res.status}`);
+    const result = await runHealthChecks(io);
+
+    // Save to history (don't await — fire and forget, non-blocking)
+    SystemHealthLog.create({
+      overall: result.overall,
+      services: result.services
+    }).catch(err => console.log('Health log save failed:', err.message));
+
+    // Only broadcast to connected clients if status actually CHANGED —
+    // avoids spamming sockets every 30 seconds with identical data
+    if (result.overall !== lastBroadcastOverall) {
+      io.emit('system:health_change', result);
+      console.log(`🩺 System health changed: ${lastBroadcastOverall} → ${result.overall}`);
+      lastBroadcastOverall = result.overall;
+    }
   } catch (err) {
-    console.log(`🌐 Overpass connectivity check: ❌ UNREACHABLE (${err.message})`);
-    console.log('⚠️ If this fails, your hosting/dev environment likely blocks this domain.');
-    console.log('⚠️ Check Antigravity/hosting network settings for outbound domain restrictions.');
-    console.log('⚠️ The app will rely on time-of-day fallback scores for lighting/crowd until this is resolved.');
+    console.error('Health check cycle failed:', err.message);
   }
 };
 
-// Call this once after server starts
-checkOverpassConnectivity();
+// Run once immediately on startup, then every 30 seconds
+performHealthCheckCycle();
+setInterval(performHealthCheckCycle, 30000);
 
 module.exports = { app, server, io };

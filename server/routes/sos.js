@@ -11,6 +11,9 @@ const {
   alertPoliceStation 
 } = require('../services/twilioService');
 
+// Self-diagnosis: check Twilio health before SOS attempts
+const { getCurrentHealthState } = require('../services/healthMonitorService');
+
 // Fetch nearest police station via robust Overpass client
 const { queryOverpass, getCacheKey } = require('../utils/overpassClient');
 
@@ -73,6 +76,19 @@ router.post('/trigger', auth, async (req, res) => {
       console.error('Reverse geocoding error:', geoErr.message);
     }
 
+    // ── Pre-flight health check: is Twilio reachable? ──
+    const health = getCurrentHealthState();
+    const twilioHealthy = health.services?.twilio?.status === 'healthy';
+
+    let fallbackChannelsUsed = false;
+    if (!twilioHealthy) {
+      console.error('⚠️ SOS triggered but Twilio is DOWN — using fallback channels');
+      fallbackChannelsUsed = true;
+      // Continue with the SOS log regardless — the frontend will use
+      // this flag to show tel:/wa.me links directly to the user instead
+      // of waiting on a Twilio call that will fail
+    }
+
     // 4. Send SMS to ALL contacts via Twilio (automatic, real delivery)
     const smsResults = await sendSOSToAllContacts(
       contacts, 
@@ -121,7 +137,10 @@ router.post('/trigger', auth, async (req, res) => {
     // 9. Return full response to frontend
     return res.status(200).json({
       success: true,
-      message: 'SOS activated successfully',
+      message: fallbackChannelsUsed
+        ? 'Twilio is currently unavailable — please use the call/WhatsApp buttons below to reach your contacts directly.'
+        : 'SOS activated successfully',
+      fallbackChannelsUsed,
       data: {
         contactsNotified: contacts.map(c => ({ 
           name: c.name, 

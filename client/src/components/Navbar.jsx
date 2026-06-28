@@ -1,5 +1,7 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import HealthStatusDot from './HealthStatusDot';
 
 const ShieldIcon = () => (
   <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -18,38 +20,100 @@ const Navbar = () => {
     navigate('/');
   };
 
+  const location = useLocation();
+  const [imgError, setImgError] = useState(false);
+
+  const userInitials = user?.fullName
+    ? user.fullName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
+    : 'U';
+
+  const getLinkStyle = (path) => {
+    const isActive = location.pathname === path;
+    return {
+      padding: '24px 0',
+      margin: '0 16px',
+      fontSize: 15,
+      fontWeight: isActive ? 700 : 600,
+      color: isActive ? '#FF6B00' : '#1a1c1c',
+      borderBottom: isActive ? '3px solid #FF6B00' : '3px solid transparent',
+      transition: 'all 0.2s',
+      textDecoration: 'none'
+    };
+  };
+
   return (
-    <nav className="navbar">
-      <Link to={isAuthenticated ? '/dashboard' : '/'} className="navbar-logo">
-        <ShieldIcon />
-        <span>SAFELLE</span>
-      </Link>
+    <nav className="navbar" style={{ 
+      display: 'flex', 
+      justifyContent: 'space-between', 
+      alignItems: 'center', 
+      padding: '0 40px',
+      background: '#fff',
+      borderBottom: '1px solid #f0f0f0',
+      boxShadow: 'none',
+      height: 80
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center' }}>
+        <Link to={isAuthenticated ? '/dashboard' : '/'} className="navbar-logo" style={{ display: 'flex', alignItems: 'center', gap: 12, textDecoration: 'none', color: '#1a1c1c' }}>
+          <ShieldIcon />
+          <span style={{ fontWeight: 900, fontSize: 24, letterSpacing: '-0.5px' }}>SAFELLE</span>
+        </Link>
+        <Link 
+          to="/system-health" 
+          style={{ display: 'flex', alignItems: 'center', marginLeft: 12, transition: 'transform 0.2s' }} 
+          className="health-dot-link" 
+          title="View system status" 
+          aria-label="View system status"
+        >
+          <HealthStatusDot />
+        </Link>
+      </div>
 
       <div className="navbar-links">
         {isAuthenticated ? (
-          <>
-            <Link to="/dashboard" className="navbar-link">Dashboard</Link>
-            <Link to="/route-planner" className="navbar-link">Plan Route</Link>
-            <Link to="/loved-ones" className="navbar-link">Contacts</Link>
-            <button onClick={handleLogout} className="navbar-link">
+          <div style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', display: 'flex', height: '100%', alignItems: 'center' }}>
+            <Link to="/dashboard" style={getLinkStyle('/dashboard')}>Dashboard</Link>
+            <Link to="/route-planner" style={getLinkStyle('/route-planner')}>Plan Route</Link>
+            <Link to="/loved-ones" style={getLinkStyle('/loved-ones')}>Contacts</Link>
+            <Link to="/system-health" style={getLinkStyle('/system-health')}>System Status</Link>
+            <button onClick={handleLogout} style={{...getLinkStyle('/logout'), borderTop: 'none', borderLeft: 'none', borderRight: 'none', borderBottom: '3px solid transparent', outline: 'none', background: 'none', cursor: 'pointer'}}>
               Logout
             </button>
-            <Link to="/profile" className="navbar-link" style={{
-              width: 36, height: 36, borderRadius: '50%', padding: 0,
-              background: '#FF6B00', color: 'white', display: 'flex',
-              alignItems: 'center', justifyContent: 'center', fontWeight: 700,
-              fontSize: 14
-            }}>
-              {user?.fullName?.charAt(0)?.toUpperCase() || 'U'}
-            </Link>
-          </>
+          </div>
+        ) : null}
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center' }}>
+        {isAuthenticated ? (
+          <Link to="/profile" style={{
+            width: 40, height: 40, borderRadius: '50%', padding: 0,
+            background: '#FF6B00', color: 'white', display: 'flex',
+            alignItems: 'center', justifyContent: 'center', fontWeight: 700,
+            fontSize: 16, overflow: 'hidden', border: '2px solid white',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+          }}>
+            {user?.profilePhoto && !imgError ? (
+              <img src={user.profilePhoto} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={() => setImgError(true)} />
+            ) : (
+              <span>{userInitials}</span>
+            )}
+          </Link>
         ) : (
-          <>
+          <div style={{ display: 'flex', gap: 16 }}>
             <Link to="/login" className="navbar-link">Login</Link>
             <Link to="/register" className="navbar-link primary">Sign Up</Link>
-          </>
+          </div>
         )}
       </div>
+
+      <style>{`
+        @keyframes healthDotPulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.4; }
+        }
+        .health-dot-link:hover {
+          transform: scale(1.15);
+        }
+      `}</style>
     </nav>
   );
 };

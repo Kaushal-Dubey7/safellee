@@ -124,6 +124,7 @@ const alertPoliceStation = async (policePhone, userName, lat, lng) => {
 };
 
 module.exports = {
+  client,
   sendSOSToAllContacts,
   callAllContacts,
   alertPoliceStation,

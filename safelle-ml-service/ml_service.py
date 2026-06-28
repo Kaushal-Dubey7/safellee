@@ -45,11 +45,11 @@ def load_model():
     try:
         model = joblib.load(MODEL_PATH)
         model_loaded = True
-        print(f"✅ Model loaded successfully from {MODEL_PATH}")
+        print(f"[SUCCESS] Model loaded successfully from {MODEL_PATH}")
     except Exception as e:
         model_loaded = False
-        print(f"⚠️ Model failed to load: {e}")
-        print("⚠️ Service will return errors — Node.js backend should fallback to formula")
+        print(f"[ERROR] Model failed to load: {e}")
+        print("[ERROR] Service will return errors — Node.js backend should fallback to formula")
 
 
 # ─────────────────────────────────────────────────────────────

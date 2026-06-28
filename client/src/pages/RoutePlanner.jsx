@@ -260,8 +260,17 @@ const RoutePlanner = () => {
           </button>
 
           {fetchingRoutes && (
-            <div style={{ textAlign: 'center', color: '#666', fontSize: 13, marginTop: 8 }}>
-              <p>Analyzing crime data, lighting, and crowd density for your route...</p>
+            <div className="animate-pulse" style={{ backgroundColor: '#f3f4f6', borderRadius: '1rem', height: '16rem', marginTop: '16px' }} />
+          )}
+
+          {routes?.diagnostics?.length > 0 && (
+            <div style={{
+              background: '#FFF7ED', border: '1px solid #FF6B00',
+              borderRadius: 8, padding: 12, marginBottom: 12, fontSize: 13
+            }}>
+              {routes.diagnostics.map((msg, i) => (
+                <p key={i} style={{ margin: '4px 0' }}>ℹ️ {msg}</p>
+              ))}
             </div>
           )}
 
